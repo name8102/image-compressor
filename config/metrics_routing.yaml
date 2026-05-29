@@ -1,0 +1,48 @@
+# Multi-Dimensional Image Compression Benchmark System
+# Metrics routing configuration — maps image categories to evaluator sets.
+#
+# Each category defines which evaluators to run and their weights within
+# the perceptual-quality subscore.  The overall ranking formula is:
+#
+#   Total = 0.20 * size_score  +  0.55 * quality_score
+#         + 0.25 * encode_score
+
+categories:
+
+  photo:
+    description: "高质量摄影图像"
+    type: photo
+    metrics:
+      ssimulacra2:  { weight: 0.60, higher_is_better: false }
+      butteraugli:  { weight: 0.30, higher_is_better: false }
+      ms_ssim:      { weight: 0.10, higher_is_better: true  }
+
+  manga_bw:
+    description: "黑白漫画与线稿"
+    type: manga_bw
+    metrics:
+      edge_preservation: { weight: 0.40, higher_is_better: true  }
+      fft_retention:     { weight: 0.40, higher_is_better: true  }
+      psnr:              { weight: 0.20, higher_is_better: true  }
+
+  manga_color:
+    description: "全彩漫画"
+    type: manga_color
+    metrics:
+      ssimulacra2:       { weight: 0.50, higher_is_better: false }
+      edge_preservation: { weight: 0.30, higher_is_better: true  }
+      psnr:              { weight: 0.20, higher_is_better: true  }
+
+  animated:
+    description: "GIF及动图"
+    type: animated
+    metrics:
+      psnr:          { weight: 0.70, higher_is_better: true  }
+      ssim:          { weight: 0.30, higher_is_better: true  }
+
+# ── Default weights for the four scoring dimensions ────────────────────
+
+ranking_weights:
+  size:    0.20    # compression ratio (lower = better)
+  quality: 0.55    # weighted perceptual score from category metrics
+  encode:  0.25    # encode speed (shorter = better)

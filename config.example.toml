@@ -1,0 +1,97 @@
+# Image Compressor 配置文件
+# 复制此文件为 config.toml 并根据需要修改
+
+# 数据库路径
+[database]
+path = "image_compressor.db"
+
+# 并行工作进程数（建议比 CPU 核心数少 1）
+workers = 3
+
+# 备份策略
+[backup]
+enabled = true
+original_dir = ".original"  # 原文件备份目录（相对于原文件位置）
+
+# 日志配置
+[logging]
+level = "INFO"
+# file = "/var/log/image-compressor.log"  # 可选：日志文件路径
+
+# 压缩预设
+# 根据研究测试结果调整这些参数
+
+# 照片 WebP 压缩
+[presets.photo-webp]
+description = "照片压缩为 WebP（有损）"
+strategy = "lossy"
+format = "webp"
+quality = 85
+process_cbz = false
+
+# 照片 JPEG 优化
+[presets.photo-jpeg]
+description = "照片 JPEG 质量优化"
+strategy = "lossy"
+format = "jpeg"
+quality = 80
+process_cbz = false
+
+# 漫画无损压缩
+[presets.manga-lossless]
+description = "漫画无损 WebP 压缩"
+strategy = "lossless"
+format = "webp"
+process_cbz = false
+
+# 漫画有损压缩
+[presets.manga-lossy]
+description = "漫画有损 WebP 压缩（质量较高）"
+strategy = "lossy"
+format = "webp"
+quality = 90
+process_cbz = false
+
+# CBZ 压缩（处理整个 CBZ 归档）
+[presets.cbz-optimize]
+description = "CBZ 归档内部图片压缩"
+strategy = "lossy"
+format = "webp"
+quality = 85
+process_cbz = true
+
+# 自动检测（根据文件类型选择策略）
+[presets.auto]
+description = "自动检测，根据文件扩展名选择策略"
+strategy = "auto"
+format = "webp"
+quality = 85
+process_cbz = true
+
+# JPEG XL 压缩
+[presets.jxl-lossy]
+description = "JPEG XL 有损压缩"
+strategy = "lossy"
+format = "jpeg-xl"
+quality = 85
+process_cbz = false
+
+[presets.jxl-lossless]
+description = "JPEG XL 无损压缩"
+strategy = "lossless"
+format = "jpeg-xl"
+process_cbz = false
+
+# AVIF 压缩
+[presets.avif-lossy]
+description = "AVIF 有损压缩"
+strategy = "lossy"
+format = "avif"
+quality = 50
+process_cbz = false
+
+[presets.avif-lossless]
+description = "AVIF 无损压缩"
+strategy = "lossless"
+format = "avif"
+process_cbz = false

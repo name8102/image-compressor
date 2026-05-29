@@ -1,0 +1,36 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+*.egg
+
+# Virtual environment
+.venv/
+venv/
+env/
+
+# Local configuration (copy from config.example.toml)
+config.toml
+
+# Analysis/benchmark outputs
+analysis_output/
+benchmark_results/
+
+# Test sample data (large images)
+samples/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Python type checker
+.mypy_cache/
+.ruff_cache/
