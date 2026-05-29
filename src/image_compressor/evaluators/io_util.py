@@ -8,6 +8,7 @@ with misleading extensions (e.g. PNG saved as .jpg).
 
 from __future__ import annotations
 
+import atexit
 import logging
 import subprocess
 import tempfile
@@ -124,12 +125,15 @@ def _decode_jxl(path: Path) -> Path:
     tmp = tempfile.NamedTemporaryFile(suffix=".png", delete=False)
     tmp_path = Path(tmp.name)
     tmp.close()
+    # Safety net: cleanup at interpreter exit if cache wasn't cleaned
+    atexit.register(_safe_unlink, tmp_path)
 
     result = subprocess.run(
         ["djxl", str(path), str(tmp_path)],
         capture_output=True, text=True, timeout=60,
     )
     if result.returncode != 0:
+        _safe_unlink(tmp_path)
         raise RuntimeError(f"djxl: {result.stderr.strip()}")
     return tmp_path
 
@@ -139,12 +143,15 @@ def _decode_avif(path: Path) -> Path:
     tmp = tempfile.NamedTemporaryFile(suffix=".png", delete=False)
     tmp_path = Path(tmp.name)
     tmp.close()
+    # Safety net: cleanup at interpreter exit if cache wasn't cleaned
+    atexit.register(_safe_unlink, tmp_path)
 
     result = subprocess.run(
         ["avifdec", str(path), str(tmp_path)],
         capture_output=True, text=True, timeout=60,
     )
     if result.returncode != 0:
+        _safe_unlink(tmp_path)
         raise RuntimeError(f"avifdec: {result.stderr.strip()}")
     return tmp_path
 
@@ -166,11 +173,11 @@ def read_pair_for_comparison(original: Path, compressed: Path) -> tuple[np.ndarr
     if comp_fmt == '.jxl' and orig_fmt in ('.jpg', '.jpeg'):
         orig_png = _jxl_fair_decode(original)
         comp_png = _jxl_fair_decode(compressed)
-        try:
-            return read_gray(orig_png), read_gray(comp_png)
-        finally:
-            _safe_unlink(orig_png)
-            _safe_unlink(comp_png)
+        # Track these in the fair-decode cache so they survive across
+        # multiple evaluator calls (SSIMULACRA2, Butteraugli, PSNR, etc.)
+        _FAIR_DECODE_CACHE.add(orig_png)
+        _FAIR_DECODE_CACHE.add(comp_png)
+        return read_gray(orig_png), read_gray(comp_png)
 
     return read_gray(original), read_gray(compressed)
 
@@ -208,10 +215,16 @@ def _safe_unlink(path: Path) -> None:
 
 
 def cleanup_cache() -> None:
-    """Remove all cached temp PNGs."""
+    """Remove all cached temp PNGs (both simple decode and fair-decode)."""
     for p in _PNG_CACHE.values():
         try:
             p.unlink(missing_ok=True)
         except Exception:
             pass
     _PNG_CACHE.clear()
+    for p in _FAIR_DECODE_CACHE:
+        try:
+            p.unlink(missing_ok=True)
+        except Exception:
+            pass
+    _FAIR_DECODE_CACHE.clear()

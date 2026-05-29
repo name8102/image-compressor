@@ -16,6 +16,11 @@ from image_compressor.evaluators.base import EncodeResult
 
 logger = logging.getLogger(__name__)
 
+# Forward reference for type hints (avoid circular import)
+from typing import TYPE_CHECKING
+if TYPE_CHECKING:
+    from image_compressor.benchmark.scorer import AnchorRanking, CategoryAggregate
+
 
 # ── Helpers ──────────────────────────────────────────────────────────────
 
@@ -196,6 +201,156 @@ def print_per_image_report(
         r = best["result"]
         print(f"  → 推荐: {r.config_id}  (总分 {best['total_score']:.4f}, "
               f"节省 {r.savings_pct:.1f}%, 编码 {r.encode_time:.2f}s)")
+
+
+# ── Anchor-based reports ────────────────────────────────────────────────
+
+
+def print_anchor_report(anchor: Any) -> None:
+    """Print anchor-based ranking for one image."""
+    if _HAS_RICH:
+        table = Table(
+            title=f"Anchor: {anchor.image_name} [{anchor.category}]  gate={anchor.gate_metric}",
+            show_header=True, header_style="bold cyan",
+        )
+        table.add_column("Config", width=18)
+        table.add_column("Pass", width=6)
+        table.add_column("Size", justify="right", width=10)
+        table.add_column("Ratio", justify="right", width=8)
+        table.add_column("Savings%", justify="right", width=8)
+        table.add_column("Encode", justify="right", width=8)
+
+        for e in anchor.passing:
+            table.add_row(
+                e["config_id"], "✓",
+                f"{e['compressed_size']:,}",
+                f"{e['compression_ratio']:.2%}",
+                f"{e['savings_pct']:.1f}%",
+                f"{e['encode_time']:.2f}s",
+                style="green",
+            )
+        for e in anchor.failing:
+            table.add_row(
+                e["config_id"], "✗",
+                f"{e['compressed_size']:,}",
+                f"{e['compression_ratio']:.2%}",
+                f"{e['savings_pct']:.1f}%",
+                f"{e['encode_time']:.2f}s",
+                style="dim",
+            )
+        Console().print(table)
+    else:
+        gate_dir = ">=" if anchor.gate_higher_is_better else "<="
+        print(f"\nAnchor: {anchor.image_name} [{anchor.category}]  "
+              f"gate={anchor.gate_metric} {gate_dir} {anchor.gate_threshold}")
+        print(f"  PASS ({len(anchor.passing)}):")
+        for e in anchor.passing:
+            print(f"    {e['config_id']:<18} size={e['compressed_size']:,}  "
+                  f"savings={e['savings_pct']:.1f}%  enc={e['encode_time']:.2f}s")
+        if anchor.failing:
+            print(f"  FAIL ({len(anchor.failing)}):")
+            for e in anchor.failing[:3]:
+                print(f"    {e['config_id']:<18} size={e['compressed_size']:,}")
+
+    if anchor.best:
+        b = anchor.best
+        print(f"  → 推荐: {b['config_id']}  (节省 {b['savings_pct']:.1f}%, "
+              f"体积 {b['compressed_size']:,} bytes, 编码 {b['encode_time']:.2f}s)")
+
+
+def print_category_aggregate_report(
+    category: str,
+    aggregates: list[Any],
+    top_n: int = 10,
+) -> None:
+    """Print category-level aggregate statistics."""
+    if not aggregates:
+        return
+
+    if _HAS_RICH:
+        table = Table(
+            title=f"Category Aggregates: {category} ({aggregates[0].image_count} images)",
+            show_header=True, header_style="bold magenta",
+        )
+        table.add_column("Config", width=18)
+        table.add_column("Mean Ratio", justify="right", width=10)
+        table.add_column("Mean Save%", justify="right", width=10)
+        table.add_column("Mean Enc(s)", justify="right", width=10)
+        table.add_column("GB/h", justify="right", width=8)
+
+        for a in aggregates[:top_n]:
+            table.add_row(
+                a.config_id,
+                f"{a.mean_compression_ratio:.2%}",
+                f"{a.mean_savings_pct:.1f}%",
+                f"{a.mean_encode_time:.2f}",
+                f"{a.gb_saved_per_hour:.2f}",
+            )
+        Console().print(table)
+    else:
+        print(f"\nCategory Aggregates: {category} ({aggregates[0].image_count} images)")
+        print(f"{'Config':<18} {'Ratio':>10} {'Save%':>10} {'Enc(s)':>10} {'GB/h':>8}")
+        for a in aggregates[:top_n]:
+            print(f"{a.config_id:<18} {a.mean_compression_ratio:>9.2%} "
+                  f"{a.mean_savings_pct:>9.1f}% {a.mean_encode_time:>9.2f} "
+                  f"{a.gb_saved_per_hour:>7.2f}")
+
+
+def print_pareto_report(
+    category: str,
+    all_aggs: list[Any],
+    pareto: list[Any],
+    gate: tuple[str, float, bool],
+) -> None:
+    """Print category-level Pareto frontier."""
+    if not pareto:
+        return
+
+    gate_metric, gate_threshold, higher_is_better = gate
+    qual_key = gate_metric
+
+    if _HAS_RICH:
+        table = Table(
+            title=f"Pareto Frontier: {category} (size vs {qual_key})",
+            show_header=True, header_style="bold green",
+        )
+        table.add_column("#", width=3)
+        table.add_column("Config", width=18)
+        table.add_column("Mean Ratio", justify="right", width=10)
+        table.add_column("Mean Save%", justify="right", width=10)
+        table.add_column(f"Mean {qual_key}", justify="right", width=14)
+        table.add_column("GB/h", justify="right", width=8)
+        table.add_column("Images", justify="right", width=6)
+
+        for i, a in enumerate(pareto):
+            qual_mean = a.quality_stats.get(qual_key, {}).get("mean", 0)
+            table.add_row(
+                str(i + 1), a.config_id,
+                f"{a.mean_compression_ratio:.2%}",
+                f"{a.mean_savings_pct:.1f}%",
+                f"{qual_mean:.3f}",
+                f"{a.gb_saved_per_hour:.2f}",
+                str(a.image_count),
+                style="bold green" if i == 0 else "",
+            )
+        Console().print(table)
+    else:
+        print(f"\nPareto Frontier: {category} (size vs {qual_key})")
+        print(f"{'#':>3} {'Config':<18} {'Ratio':>10} {'Save%':>10} {'Qual':>14} {'GB/h':>8}")
+        for i, a in enumerate(pareto):
+            qual_mean = a.quality_stats.get(qual_key, {}).get("mean", 0)
+            print(f"{i+1:>3} {a.config_id:<18} {a.mean_compression_ratio:>9.2%} "
+                  f"{a.mean_savings_pct:>9.1f}% {qual_mean:>13.3f} "
+                  f"{a.gb_saved_per_hour:>7.2f}")
+
+    if pareto:
+        best = pareto[0]
+        print(f"  → 帕累托最优推荐: {best.config_id}  "
+              f"(平均节省 {best.mean_savings_pct:.1f}%, "
+              f"吞吐 {best.gb_saved_per_hour:.2f} GB/h)")
+
+
+# ── Summary report ──────────────────────────────────────────────────────
 
 
 def print_summary_report(

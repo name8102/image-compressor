@@ -3,8 +3,11 @@
 解决了传统方法无法识别的 "泛黄/泛绿/泛红黑白扫描件" 问题。
 
 算法核心:
-    1. 饱和度比例过滤: 先用高饱和度像素比例快速判断
-    2. 色相集中度分析: 对高饱和度像素进行色相直方图分析
+    1. 明度通道过滤 (V < 30): 剔除极暗噪点，避免暗部饱和度的计算失真
+       - HSV 明度极低时 (V→0)，饱和度计算公式 S = (MAX-MIN)/MAX 中分母趋零，
+         导致暗部噪点的饱和度被放大到极高值且色相随机，严重干扰色相集中度分析
+    2. 饱和度比例过滤: 对有效明度区间内的像素进行高饱和度比例判断
+    3. 色相集中度分析: 对高饱和度有效像素进行色相直方图分析
        - 真正彩漫: 色相分散 (皮肤橙红 + 天空蓝 + 草地绿)
        - 偏色黑白漫: 色相集中在单一窄色系区间
 
@@ -24,6 +27,9 @@ import pyvips
 
 
 # ── 配置参数 ──────────────────────────────────────────────────────────
+
+# 明度阈值: 剔除 V < 30 的暗部像素 (暗部 HSV 饱和度计算不准确)
+DARK_PIXEL_VALUE_THRESHOLD = 30
 
 # 高饱和度阈值: 过滤纸张泛黄/JPEG 噪点 (HSV 饱和度 0-255)
 COLOR_PIXEL_SATURATION_THRESHOLD = 30
@@ -113,21 +119,30 @@ def _analyze_hue_concentration(
 def detect_grayscale(
     sat_np: np.ndarray,
     hue_np: np.ndarray,
+    val_np: np.ndarray | None = None,
     sat_threshold: int = COLOR_PIXEL_SATURATION_THRESHOLD,
+    val_threshold: int = DARK_PIXEL_VALUE_THRESHOLD,
     color_tolerance: float = COLOR_RATIO_TOLERANCE,
     hue_threshold: float = HUE_CONCENTRATION_THRESHOLD,
 ) -> tuple[bool, dict]:
-    """检测图像是否为灰度 (增强版: 色相集中度分析)。
+    """检测图像是否为灰度 (增强版: 明度过滤 + 色相集中度分析)。
 
     解决传统方法无法识别的单色偏色问题:
     - 泛黄扫描件: 整图饱和度 > 30，但色相集中在黄色区间
     - 泛绿滤镜: 整图饱和度 > 30，但色相集中在绿色区间
     - 真正彩漫: 色相分散在多个色系
 
+    Bug 修复 - 暗部噪点干扰:
+        纯黑区域的暗部噪点因 HSV 饱和度公式 (MAX-MIN)/MAX 在 V→0 时
+        分母趋零，饱和度被错误放大且色相随机。引入 V < 30 过滤后，
+        这些无效像素被排除，色相集中度分析恢复准确。
+
     Args:
         sat_np: 饱和度通道的 numpy 数组
         hue_np: 色相通道的 numpy 数组 (0-360)
+        val_np: 明度通道的 numpy 数组 (0-255), 用于过滤暗部噪点
         sat_threshold: 饱和度阈值 (默认 30)
+        val_threshold: 明度阈值，V < 此值的像素被排除 (默认 30)
         color_tolerance: 彩色像素占比容差 (默认 0.03)
         hue_threshold: 色相集中度阈值 (默认 0.90)
 
@@ -136,14 +151,28 @@ def detect_grayscale(
             is_grayscale: True 表示灰度，False 表示彩色
             metadata: 包含 color_ratio, hue_concentration 等诊断信息
     """
+    total_pixels = sat_np.size
     metadata = {
         "method": "hue_concentration",
         "color_ratio": 0.0,
         "color_pixels": 0,
-        "total_pixels": sat_np.size,
+        "total_pixels": total_pixels,
         "hue_concentration": 0.0,
         "is_single_tint": False,
+        "dark_pixels_excluded": 0,
     }
+
+    if total_pixels == 0:
+        return True, metadata
+
+    # Step 0: 明度通道过滤 — 剔除 V < val_threshold 的暗部噪点
+    # 暗部像素的 HSV 饱和度计算不准确，必须排除
+    if val_np is not None:
+        valid_mask = val_np >= val_threshold
+        dark_excluded = int(np.count_nonzero(~valid_mask))
+        metadata["dark_pixels_excluded"] = dark_excluded
+        sat_np = sat_np[valid_mask]
+        hue_np = hue_np[valid_mask]
 
     if sat_np.size == 0:
         return True, metadata
@@ -178,18 +207,20 @@ def detect_grayscale(
 def detect_grayscale_simple(
     sat_np: np.ndarray,
     hue_np: np.ndarray,
+    val_np: np.ndarray | None = None,
 ) -> bool:
     """简化版灰度检测 (仅返回结果，无元数据)。
 
     适用于不需要诊断信息的场景。
     """
-    is_grayscale, _ = detect_grayscale(sat_np, hue_np)
+    is_grayscale, _ = detect_grayscale(sat_np, hue_np, val_np=val_np)
     return is_grayscale
 
 
 def get_detection_config() -> dict:
     """返回当前检测配置 (便于调试/日志)。"""
     return {
+        "val_threshold": DARK_PIXEL_VALUE_THRESHOLD,
         "sat_threshold": COLOR_PIXEL_SATURATION_THRESHOLD,
         "color_tolerance": COLOR_RATIO_TOLERANCE,
         "hue_threshold": HUE_CONCENTRATION_THRESHOLD,

@@ -8,6 +8,7 @@ Reuses the existing compressor.py functions where possible.
 
 from __future__ import annotations
 
+import atexit
 import logging
 import subprocess
 import tempfile
@@ -119,6 +120,9 @@ def _ensure_cli_input(path: Path) -> Path:
     CLI tools often rely on file extension to detect format.
     If the extension misrepresents the content (e.g. WebP saved as .jpg),
     convert to a correctly-named temp PNG.
+
+    NOTE: Temp files created here are tracked in _CLI_TEMP_FILES and
+    cleaned up by the caller (encode functions) or by cleanup_cache().
     """
     from image_compressor.evaluators.io_util import detect_real_format
 
@@ -138,9 +142,13 @@ def _ensure_cli_input(path: Path) -> Path:
         path.name, ext, real,
     )
     from PIL import Image
+    # Use context-managed temporary file (safer than delete=False)
+    import atexit
     tmp = tempfile.NamedTemporaryFile(suffix=".png", delete=False)
     tmp_path = Path(tmp.name)
     tmp.close()
+    # Register cleanup at interpreter exit as a safety net
+    atexit.register(_safe_unlink, tmp_path)
     with Image.open(path) as img:
         img.save(tmp_path, format="PNG")
     return tmp_path

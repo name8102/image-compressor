@@ -17,8 +17,16 @@ from image_compressor.benchmark.pipeline import BenchmarkPipeline
 from image_compressor.benchmark.codec_engine import encode_all, encode_one, load_all_configs
 from image_compressor.benchmark.router import MetricsRouter, detect_category
 from image_compressor.benchmark.scorer import (
+    anchor_rank,
+    AnchorRanking,
+    CategoryAggregate,
+    compute_category_aggregates,
+    compute_category_pareto,
+    compute_images_per_minute,
     compute_pareto_frontier,
     compute_ranked_scores,
+    compute_throughput,
+    default_gate_for_category,
 )
 
 __all__ = [
@@ -28,6 +36,15 @@ __all__ = [
     "encode_all",
     "encode_one",
     "load_all_configs",
-    "compute_ranked_scores",
+    # Scorer — anchor-based ranking
+    "anchor_rank",
+    "AnchorRanking",
+    "CategoryAggregate",
+    "compute_category_aggregates",
+    "compute_category_pareto",
+    "compute_images_per_minute",
     "compute_pareto_frontier",
+    "compute_ranked_scores",
+    "compute_throughput",
+    "default_gate_for_category",
 ]

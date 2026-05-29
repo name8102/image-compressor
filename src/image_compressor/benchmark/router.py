@@ -46,11 +46,13 @@ def _is_grayscale(path: Path) -> bool:
         hsv = img.colourspace("hsv")
         h = hsv[0].write_to_memory()
         s = hsv[1].write_to_memory()
+        v = hsv[2].write_to_memory()
         import numpy as np
         sat_np = np.frombuffer(s, dtype=np.uint8).copy()
         hue_np = np.frombuffer(h, dtype=np.uint8).copy().astype(np.float64)
         hue_np = hue_np * (360.0 / 255.0)
-        is_gray, _ = detect_grayscale(sat_np, hue_np)
+        val_np = np.frombuffer(v, dtype=np.uint8).copy()
+        is_gray, _ = detect_grayscale(sat_np, hue_np, val_np=val_np)
         return is_gray
     except Exception:
         pass
